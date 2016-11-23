@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"time"
+
+	"encoding/json"
+
+	"github.com/inkah-trace/common"
+	"github.com/inkah-trace/daemon"
 )
 
 /* A Simple function to verify error */
@@ -30,22 +34,29 @@ func main() {
 
 	for {
 		n, addr, err := ServerConn.ReadFromUDP(buf)
-		message := string(buf[0:n])
+
+		message := buf[0:n]
 		fmt.Println("Received ", message, " from ", addr)
 
-		timestamp := time.Now().Unix()
-
-		go SendMessageUpstream(timestamp, message)
-
+		e := inkah.Event{}
+		err = daemon.Unmarshall(message, &e)
 		if err != nil {
 			fmt.Println("Error: ", err)
 		}
+
+		go SendMessageUpstream(&e)
 	}
 }
 
-func SendMessageUpstream(timestamp int64, message string) {
+func SendMessageUpstream(event *inkah.Event) {
 	conn, _ := net.Dial("tcp", "127.0.0.1:9810")
 	defer conn.Close()
-	hn, _ := os.Hostname()
-	fmt.Fprintf(conn, "INKAH\t%d:%s:%s\n", timestamp, hn, message)
+
+	b, err := json.Marshal(event)
+	if err != nil {
+		fmt.Println("JSON Marshalling error: ", err)
+	}
+
+	fmt.Fprintf(conn, string(b))
+
 }
