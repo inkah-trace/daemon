@@ -1,62 +1,49 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
-	"os"
-
-	"encoding/json"
-
-	"github.com/inkah-trace/common"
-	"github.com/inkah-trace/daemon"
+	"google.golang.org/grpc"
+	pb "github.com/inkah-trace/daemon/protobuf"
+	context "golang.org/x/net/context"
 )
 
-/* A Simple function to verify error */
-func CheckError(err error) {
-	if err != nil {
-		fmt.Println("Error: ", err)
-		os.Exit(0)
+type inkahDaemonServer struct{
+	eventChan chan *pb.Event
+}
+
+func (ids *inkahDaemonServer) RegisterEvent(ctx context.Context, event *pb.Event) (*pb.EventResponse, error) {
+	ids.eventChan <- event
+	return &pb.EventResponse{}, nil
+}
+
+func processEvents(eventChan chan *pb.Event) {
+	for e := range eventChan {
+		fmt.Println(e)
+	}
+}
+
+func newInkahDaemonServer() pb.InkahServer {
+	eventChan := make(chan *pb.Event, 1000)
+	go processEvents(eventChan)
+	return &inkahDaemonServer{
+		eventChan: eventChan,
 	}
 }
 
 func main() {
-	ServerAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:9800")
-	CheckError(err)
+	port := flag.Int("port", 50051, "Port for the server to run on")
+	flag.Parse()
 
-	// Now listen at selected port
-	ServerConn, err := net.ListenUDP("udp", ServerAddr)
-	CheckError(err)
-	defer ServerConn.Close()
+	fmt.Printf("Starting Inkah daemon on port %d...\n", *port)
 
-	buf := make([]byte, 1024)
-
-	fmt.Println("Daemon running on 127.0.0.1:9800")
-
-	for {
-		n, addr, err := ServerConn.ReadFromUDP(buf)
-
-		message := buf[0:n]
-		fmt.Println("Received ", message, " from ", addr)
-
-		e := inkah.Event{}
-		err = daemon.Unmarshall(message, &e)
-		if err != nil {
-			fmt.Println("Error: ", err)
-		}
-
-		go SendMessageUpstream(&e)
-	}
-}
-
-func SendMessageUpstream(event *inkah.Event) {
-	conn, _ := net.Dial("tcp", "127.0.0.1:9810")
-	defer conn.Close()
-
-	b, err := json.Marshal(event)
+	conn, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
-		fmt.Println("JSON Marshalling error: ", err)
+		fmt.Printf("Error: %v\n", err)
+		return
 	}
-
-	fmt.Fprintf(conn, string(b))
-
+	grpcServer := grpc.NewServer()
+	pb.RegisterInkahServer(grpcServer, newInkahDaemonServer())
+	grpcServer.Serve(conn)
 }

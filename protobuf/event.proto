@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+option go_package = "protobuf";
+package inkah;
+
+service Inkah {
+    rpc RegisterEvent (Event) returns (EventResponse) {}
+}
+
+message Event {
+    string traceId = 1;
+    string spanId = 2;
+    string parentSpanId = 3;
+    string requestId = 4;
+
+    enum EventType {
+        SPAN_BEGIN = 0;
+        SPAN_END = 1;
+        REQUEST_BEGIN = 2;
+        REQUEST_END = 3;
+    }
+
+    EventType eventType = 5;
+}
+
+message EventResponse {}
