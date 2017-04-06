@@ -7,33 +7,49 @@ import (
 	"google.golang.org/grpc"
 	pb "github.com/inkah-trace/daemon/protobuf"
 	context "golang.org/x/net/context"
+	"time"
+	"os"
 )
 
-type inkahDaemonServer struct{
-	eventChan chan *pb.Event
+type inkahDaemonServer struct {
+	inkahServer *string
+	eventChan chan *pb.ForwardedEvent
 }
 
 func (ids *inkahDaemonServer) RegisterEvent(ctx context.Context, event *pb.Event) (*pb.EventResponse, error) {
-	ids.eventChan <- event
+	hn, _ := os.Hostname()
+	fe := pb.ForwardedEvent{
+		TraceId: event.TraceId,
+		SpanId: event.SpanId,
+		ParentSpanId: event.ParentSpanId,
+		RequestId: event.RequestId,
+		EventType: event.EventType,
+		Timestamp: time.Now().UnixNano() / int64(time.Millisecond),
+		Hostname: hn,
+	}
+
+	ids.eventChan <- &fe
 	return &pb.EventResponse{}, nil
 }
 
-func processEvents(eventChan chan *pb.Event) {
+func processEvents(eventChan chan *pb.ForwardedEvent) {
 	for e := range eventChan {
 		fmt.Println(e)
 	}
 }
 
-func newInkahDaemonServer() pb.InkahServer {
-	eventChan := make(chan *pb.Event, 1000)
+func newInkahDaemonServer(inkahServer *string) pb.InkahServer {
+	eventChan := make(chan *pb.ForwardedEvent, 1000)
 	go processEvents(eventChan)
 	return &inkahDaemonServer{
+		inkahServer: inkahServer,
 		eventChan: eventChan,
 	}
 }
 
 func main() {
 	port := flag.Int("port", 50051, "Port for the server to run on")
+	inkahServer := flag.String("server", "localhost:50052", "Host and port of Inkah Server.")
 	flag.Parse()
 
 	fmt.Printf("Starting Inkah daemon on port %d...\n", *port)
@@ -44,6 +60,6 @@ func main() {
 		return
 	}
 	grpcServer := grpc.NewServer()
-	pb.RegisterInkahServer(grpcServer, newInkahDaemonServer())
+	pb.RegisterInkahServer(grpcServer, newInkahDaemonServer(inkahServer))
 	grpcServer.Serve(conn)
 }
