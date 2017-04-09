@@ -18,7 +18,6 @@ message Event {
     string traceId = 1;
     string spanId = 2;
     string parentSpanId = 3;
-    string requestId = 4;
 
     EventType eventType = 5;
 }
@@ -27,7 +26,6 @@ message ForwardedEvent {
     string traceId = 1;
     string spanId = 2;
     string parentSpanId = 3;
-    string requestId = 4;
     string hostname = 5;
     int64 timestamp = 6;
 

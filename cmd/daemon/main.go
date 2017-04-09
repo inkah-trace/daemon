@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
@@ -9,6 +10,9 @@ import (
 	context "golang.org/x/net/context"
 	"time"
 	"os"
+	"net/http"
+	"bytes"
+	"io/ioutil"
 )
 
 type inkahDaemonServer struct {
@@ -22,19 +26,23 @@ func (ids *inkahDaemonServer) RegisterEvent(ctx context.Context, event *pb.Event
 		TraceId: event.TraceId,
 		SpanId: event.SpanId,
 		ParentSpanId: event.ParentSpanId,
-		RequestId: event.RequestId,
 		EventType: event.EventType,
 		Timestamp: time.Now().UnixNano() / int64(time.Millisecond),
 		Hostname: hn,
 	}
 
-	ids.eventChan <- &fe
+	select {
+	case ids.eventChan <- &fe: // Put 2 in the channel unless it is full
+	default:
+		fmt.Println("Event channel full. Discarding event.")
+	}
+
 	return &pb.EventResponse{}, nil
 }
 
 func processEvents(eventChan chan *pb.ForwardedEvent) {
 	for e := range eventChan {
-		fmt.Println(e)
+		sendEventToServer(e)
 	}
 }
 
@@ -45,6 +53,28 @@ func newInkahDaemonServer(inkahServer *string) pb.InkahServer {
 		inkahServer: inkahServer,
 		eventChan: eventChan,
 	}
+}
+
+func sendEventToServer(event *pb.ForwardedEvent) {
+	url := "http://localhost:50052/event"
+
+	b, err := json.Marshal(event)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(b))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer resp.Body.Close()
+
+	ioutil.ReadAll(resp.Body)
 }
 
 func main() {
